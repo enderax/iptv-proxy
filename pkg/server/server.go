@@ -162,7 +162,37 @@ func (c *Config) replaceURL(uri string, trackIndex int, xtream bool) (string, er
 		uriPath = strings.ReplaceAll(uriPath, c.XtreamUser.PathEscape(), c.User.PathEscape())
 		uriPath = strings.ReplaceAll(uriPath, c.XtreamPassword.PathEscape(), c.Password.PathEscape())
 	} else {
-		uriPath = path.Join("/", c.endpointAntiColision, c.User.PathEscape(), c.Password.PathEscape(), fmt.Sprintf("%d", trackIndex), path.Base(uriPath))
+		// Extract path segments (like /series/, /movies/) to preserve content type info
+		pathDir := path.Dir(uriPath)
+		pathBase := path.Base(uriPath)
+
+		// Build the path segments after removing any existing credentials from the directory path
+		// This preserves paths like /series/, /movies/, etc. that clients need
+		pathSegments := strings.Split(strings.Trim(pathDir, "/"), "/")
+		preservedPath := ""
+
+		// Filter out segments that look like credentials (typically in format: username/password/id)
+		// Keep segments that look like content type indicators (series, movies, live, etc.)
+		for _, segment := range pathSegments {
+			// Skip empty segments
+			if segment == "" {
+				continue
+			}
+			// Common IPTV path prefixes to preserve
+			if segment == "series" || segment == "movie" || segment == "movies" ||
+			   segment == "live" || segment == "vod" || segment == "timeshift" {
+				preservedPath = segment
+				break // Take the first matching segment
+			}
+		}
+
+		// Build the URL path with content type FIRST to match Xtream format
+		// Format: /{contentType}/{antiColision}/{user}/{password}/{trackIndex}/{filename}
+		if preservedPath != "" {
+			uriPath = path.Join("/", preservedPath, c.endpointAntiColision, c.User.PathEscape(), c.Password.PathEscape(), fmt.Sprintf("%d", trackIndex), pathBase)
+		} else {
+			uriPath = path.Join("/", c.endpointAntiColision, c.User.PathEscape(), c.Password.PathEscape(), fmt.Sprintf("%d", trackIndex), pathBase)
+		}
 	}
 
 	basicAuth := oriURL.User.String()

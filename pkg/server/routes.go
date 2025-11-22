@@ -68,6 +68,22 @@ func (c *Config) xtreamRoutes(r *gin.RouterGroup) {
 	r.GET("/play/:token/:type", c.xtreamStreamPlay)
 }
 
+// extractContentType extracts content type (series, movie, etc.) from a URI path
+func extractContentType(uri string) string {
+	pathSegments := strings.Split(strings.Trim(uri, "/"), "/")
+	for _, segment := range pathSegments {
+		if segment == "" {
+			continue
+		}
+		// Common IPTV path prefixes to detect
+		if segment == "series" || segment == "movie" || segment == "movies" ||
+		   segment == "live" || segment == "vod" || segment == "timeshift" {
+			return segment
+		}
+	}
+	return ""
+}
+
 func (c *Config) m3uRoutes(r *gin.RouterGroup) {
 	r.GET("/"+c.M3UFileName, c.authenticate, c.getM3U)
 	// XXX Private need: for external Android app
@@ -79,10 +95,23 @@ func (c *Config) m3uRoutes(r *gin.RouterGroup) {
 			track:       &c.playlist.Tracks[i],
 		}
 
+		// Extract content type from track URI to preserve in routes
+		contentType := extractContentType(track.URI)
+
 		if strings.HasSuffix(track.URI, ".m3u8") {
-			r.GET(fmt.Sprintf("/%s/%s/%s/%d/:id", c.endpointAntiColision, c.User, c.Password, i), trackConfig.m3u8ReverseProxy)
+			if contentType != "" {
+				// Format: /{contentType}/{antiColision}/{user}/{password}/{trackIndex}/:id
+				r.GET(fmt.Sprintf("/%s/%s/%s/%s/%d/:id", contentType, c.endpointAntiColision, c.User, c.Password, i), trackConfig.m3u8ReverseProxy)
+			} else {
+				r.GET(fmt.Sprintf("/%s/%s/%s/%d/:id", c.endpointAntiColision, c.User, c.Password, i), trackConfig.m3u8ReverseProxy)
+			}
 		} else {
-			r.GET(fmt.Sprintf("/%s/%s/%s/%d/%s", c.endpointAntiColision, c.User, c.Password, i, path.Base(track.URI)), trackConfig.reverseProxy)
+			if contentType != "" {
+				// Format: /{contentType}/{antiColision}/{user}/{password}/{trackIndex}/{filename}
+				r.GET(fmt.Sprintf("/%s/%s/%s/%s/%d/%s", contentType, c.endpointAntiColision, c.User, c.Password, i, path.Base(track.URI)), trackConfig.reverseProxy)
+			} else {
+				r.GET(fmt.Sprintf("/%s/%s/%s/%d/%s", c.endpointAntiColision, c.User, c.Password, i, path.Base(track.URI)), trackConfig.reverseProxy)
+			}
 		}
 	}
 }
